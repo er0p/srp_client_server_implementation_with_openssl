@@ -14,7 +14,6 @@
 using namespace std;
 using namespace boost;
 
-
 typedef pair<int, SSL*> SocketSSLHandles_t;
 SocketSSLHandles_t WriteHandler(0,0);
 
@@ -23,21 +22,8 @@ typedef set<SocketSSLHandles_t> SocketSet_t;
 SocketSet_t SocketSet;
 mutex SocketSetMutex;
 
-// WaitForWrite is a condition variable that is signaled when Sender must start sending the data
-condition_variable WaitForWrite;
-mutex WaitForWriteMutex;
-
-// mutex that synchronizes access to SSL_read/SSL_write
-mutex WriteReadMutex;
-
 typedef boost::lockfree::queue<SocketSSLHandles_t, boost::lockfree::capacity<50> > ReadQueue_t;
 ReadQueue_t ReadQueue;
-
-// thread functions to send and receive
-void Receive();
-void Send();
-int Gmaster=0;
-
 
 // needed for new implementation
 int master_socket=0;
@@ -140,7 +126,32 @@ void listen()
 }
 
 
-void Acceptor::operator()()
+int accept_socket()
+{
+    // Open up new connection
+    cout << "New connection has arrived" << endl;
+    struct sockaddr_in addr;
+    int len = sizeof(addr);
+    int client = accept(master_socket, (struct sockaddr *)&addr, (socklen_t *)&len);
+    if(client == -1)
+        perror("accept");
+    return client;
+}
+
+SSL* accept_ssl(int iTCPHandle)
+{
+    SSL *ssl = (SSL*) SSL_new(ssl_ctx);
+    SSL_set_fd(ssl, iTCPHandle);
+
+    // normally this would be in other thread
+    if(SSL_accept(ssl) == -1) {
+        ERR_print_errors_fp(stderr);
+        throw runtime_error("Can't SSL_accept => can't continue");
+    }
+    return ssl;
+}
+
+void main_loop()
 {
     cout << "Entering acceptor loop..." << endl;
     while(1)
@@ -182,7 +193,7 @@ void Acceptor::operator()()
             {
 
                 SocketSSLHandles_t aTmpHandles = *aIt;
-                aIt++;
+                ++aIt;
                 if( FD_ISSET(aTmpHandles.first, &fd_read ) )
                 {
                     // you need to erase tmpHd from SocketSet - otherwise it will
@@ -197,148 +208,20 @@ void Acceptor::operator()()
         // has arrived
         if( FD_ISSET(master_socket, &fd_read) )
         {
-            int new_fd=openTCPSocket();
+            int new_fd=accept_socket();
             if( new_fd >= 0 )
             {
-                int flag =1;
-//                setsockopt(new_fd, IPPROTO_TCP, TCP_NODELAY, (char *)&flag, sizeof(int));
                 cout << "New socket with ID : " << new_fd
                      << " is going to be added to map" << endl;
-                SSL* ssl = openSSLSession(new_fd);
-                lock_guard<mutex> guard(SocketSetMutex);
-                SocketSet.insert(make_pair(new_fd, ssl));
+                SSL* ssl = accept_ssl(new_fd);
+                {
+                    lock_guard<mutex> guard(SocketSetMutex);
+                    SocketSet.insert(make_pair(new_fd, ssl));
+                }
             }
         }
     }
 }
-
-int Acceptor::openTCPSocket()
-{
-    // Open up new connection
-    cout << "New connection has arrived" << endl;
-    struct sockaddr_in addr;
-    int len = sizeof(addr);
-    int client = accept(master_socket, (struct sockaddr *)&addr, (socklen_t *)&len);
-    if(client == -1)
-        perror("accept");
-    return client;
-}
-
-SSL* Acceptor::openSSLSession(int iTCPHandle)
-{
-    SSL *ssl = (SSL*) SSL_new(_ctx);
-    SSL_set_fd(ssl, iTCPHandle);
-
-    // normally this would be in other thread
-    if(SSL_accept(ssl) == -1) {
-        ERR_print_errors_fp(stderr);
-        throw runtime_error("Can't SSL_accept => can't continue");
-    }
-    return ssl;
-}
-
-void Receive()
-{
-    while(1)
-    {
-        char buf[1024];
-        SocketSSLHandles_t handler;
-
-        // TO-DO: this way it takes 100% CPU, some signal would be usefull
-        while (!ReadQueue.empty())
-        {
-            ReadQueue.pop(handler);
-
-            memset(buf,'\0',1024);
-            int len_rcv=0;
-            cout << SSL_state_string(handler.second) << endl;
-            {
-                lock_guard<mutex> lock(WriteReadMutex);
-                int flag = 1;
-                while( flag!=0 )
-                {
-                    cout << "SSL_read: start" << endl;
-                    len_rcv = SSL_read(handler.second, buf, 1024);
-                    flag = SSL_pending(handler.second);
-                    cout << "PENDING: " << flag << endl;
-
-//                cout << "SSL_read: stop" << endl;
-                    if( !handle_error_code(len_rcv, handler.second, len_rcv, "rcv") )
-                    {
-                        // dirty thing - if it has \n on the end - remove it
-                        if( buf[len_rcv-1] == '\n' )
-                            buf[len_rcv-1] = '\0';
-
-                        cout << buf << endl;
-                        {
-                            // add it back to the socket so that select can use it
-                            lock_guard<mutex> guard(SocketSetMutex);
-                            SocketSet.insert(handler);
-
-                            // push handler ID and notify sender thread
-                            WriteHandler = handler;
-                            WaitForWrite.notify_one();
-                        }
-                        break;
-                    }
-                }
-
-            }
-        }
-    }
-}
-
-void Send()
-{
-    while(1)
-    {
-        SocketSSLHandles_t handler(0,0);
-        {
-            unique_lock<mutex> lock(WaitForWriteMutex);
-            WaitForWrite.wait(lock);
-            handler = WriteHandler;
-        }
-
-        cout << "Writing to handler " << handler.first << endl;
-        string buf(EXCHANGE_STRING);
-        for(int i=0; i<SEND_ITERATIONS; ++i)
-        {
-            int len = 0;
-            // wait timer for select
-            struct timeval tv;
-            tv.tv_sec  = 0;
-            tv.tv_usec = 10;
-
-            do
-            {
-                fd_set fd_write;
-                FD_ZERO(&fd_write);
-                FD_SET(Gmaster, &fd_write);
-                FD_SET(handler.first, &fd_write);
-
-                int maxv=Gmaster;
-                if(Gmaster < handler.first)
-                    maxv=handler.first;
-
-                select(maxv+1, NULL, &fd_write, NULL, (struct timeval *)&tv);
-
-                if( FD_ISSET(handler.first, &fd_write) )
-                {
-                    lock_guard<mutex> lock(WriteReadMutex);
-//                    cout << "SSL_write: start" << endl;
-                    int write_len=SSL_write(handler.second, buf.c_str()+len, buf.size()-len);
-//                    cout << "SSL_write: stop " << endl;
-                    handle_error_code(len, handler.second, write_len, "write");
-
-                    // for debugging re-neg
-                    // cout << "SSL STATE: " << SSL_state_string(handler.second) << endl;
-                }
-
-            } while( len != static_cast<int>(buf.size()) );
-        }
-    }
-}
-
 
 /// --- MAIN --- ///
 int main() {
@@ -346,11 +229,8 @@ int main() {
     ssl_init();
     listen();
 
-    Acceptor ac(master_socket, ssl_ctx);
-    ac();
+    main_loop();
 
-
-  getchar();
-
-  return 0;
+    getchar();
+    return 0;
 }

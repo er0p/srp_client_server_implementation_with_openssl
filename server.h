@@ -15,20 +15,6 @@
 #include <boost/thread/thread.hpp>
 #include <openssl/ssl.h>
 
-struct Acceptor
-{
-    int         _master;
-    SSL_CTX*    _ctx;
 
-    Acceptor(int iMasterHd, SSL_CTX* iCtx)
-        : _master(iMasterHd)
-        , _ctx(iCtx)
-        { }
-
-    int openTCPSocket();
-    SSL* openSSLSession(int);
-
-    void operator()();
-};
 
 #endif
