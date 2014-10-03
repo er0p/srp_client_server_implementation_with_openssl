@@ -1,0 +1,9 @@
+#define MAX_PACKET_SIZE     1024
+#define PORT                5061
+#define IP                  "127.0.0.1"
+#define EXCHANGE_STRING     "ABCDEFGHIJKLMNOPRSTUWXYZ"
+#define EXCHANGE_STRING_LEN sizeof(EXCHANGE_STRING)/sizeof(EXCHANGE_STRING[0])
+#define RENEG_INIT_LEN      200
+#define CERTIFICATE_FILE    "etc/cert"
+#define PRIVATE_KEY_FILE    "etc/pkey"
+#define SEND_ITERATIONS     100000
