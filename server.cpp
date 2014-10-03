@@ -1,4 +1,10 @@
-#include "server.h"
+#include <boost/thread/thread.hpp>
+#include <openssl/ssl.h>
+
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <resolv.h>
+#include <unistd.h>
 #include <vector>
 #include <set>
 #include <netinet/tcp.h>
