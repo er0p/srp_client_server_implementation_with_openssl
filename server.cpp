@@ -7,15 +7,16 @@
 #include <set>
 #include <netinet/tcp.h>
 #include <fcntl.h>
-#include <iostream>
 #include <exception>
 #include <netinet/tcp.h>
 #include "defs.h"
 #include <boost/lockfree/queue.hpp>
+#include <iostream>
 #include "ssl_process.h"
+#include <utility>
 
-using namespace std;
 using namespace boost;
+using namespace std;
 
 typedef pair<int, SSL*> SocketSSLHandles_t;
 SocketSSLHandles_t WriteHandler(0,0);
@@ -31,37 +32,6 @@ ReadQueue_t ReadQueue;
 // needed for new implementation
 int master_socket=0;
 SSL_CTX* ssl_ctx;
-
-bool handle_error_code(int& len, SSL* SSLHandler, int code, const char* func)
-{
-    switch( SSL_get_error( SSLHandler, code ) )
-    {
-    case SSL_ERROR_NONE:
-        len+=code;
-        return false;
-    case SSL_ERROR_ZERO_RETURN:
-        cout << "CONNETION CLOSE ON WRITE" << endl;
-        exit(1);
-        break;
-    case SSL_ERROR_WANT_READ:
-        cout << func << " WANT READ" << endl;
-        break;
-    case SSL_ERROR_WANT_WRITE:
-        cout << func << " WANT WRITE" << endl;
-        break;
-    case SSL_ERROR_SYSCALL:
-        cout << func << " ESYSCALL" << endl;
-//        exit(1);
-        break;
-    case SSL_ERROR_SSL:
-        cout << func << " ESSL" << endl;
-        exit(1);
-        break;
-    default:
-        cout << func << " SOMETHING ELSE" << endl;
-    }
-    return true;
-}
 
 void ssl_init_server()
 {

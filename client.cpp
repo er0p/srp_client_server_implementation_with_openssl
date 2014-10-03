@@ -18,6 +18,7 @@
 #include <iostream>
 #include <netinet/in.h>
 #include <fcntl.h>
+#include <iostream>
 
 #include "defs.h"
 #include "ssl_process.h"
@@ -29,45 +30,6 @@ int master_fd = 0;
 
 SSL* SSLHandler = 0;
 int CharsRead   = 0;
-
-// with this you can block sender thread during renegotiation
-
-bool handle_error_code(int& len, SSL* SSLHandler, int code, const char* func)
-{
-    switch( SSL_get_error( SSLHandler, code ) )
-    {
-    case SSL_ERROR_NONE:
-        len+=code;
-        return false;
-    case SSL_ERROR_ZERO_RETURN:
-        cout << "CONNETION CLOSE ON WRITE" << endl;
-        break;
-    case SSL_ERROR_WANT_READ:
-        cout << func << " WANT READ" << endl;
-        return true;
-        break;
-    case SSL_ERROR_WANT_WRITE:
-        cout << func << " WANT WRITE" << endl;
-        return true;
-        break;
-    case SSL_ERROR_SYSCALL:
-        cout << func << " ESYSCALL" << endl;
-//        exit(1);
-        break;
-    case SSL_ERROR_SSL:
-        cout << func << " ESSL" << endl;
-        return true;
-        exit(1);
-        break;
-    default:
-        cout << func << " SOMETHING ELSE" << endl;
-        return true;
-        exit(1);
-
-    }
-    return true;
-}
-
 
 void connect()
 {
