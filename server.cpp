@@ -1,6 +1,4 @@
 #include <boost/thread/thread.hpp>
-#include <openssl/ssl.h>
-
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <resolv.h>
@@ -12,10 +10,9 @@
 #include <iostream>
 #include <exception>
 #include <netinet/tcp.h>
-#include <openssl/ssl.h>
-#include <openssl/err.h>
 #include "defs.h"
 #include <boost/lockfree/queue.hpp>
+#include "ssl_process.h"
 
 using namespace std;
 using namespace boost;
@@ -66,22 +63,13 @@ bool handle_error_code(int& len, SSL* SSLHandler, int code, const char* func)
     return true;
 }
 
-void ssl_init()
+void ssl_init_server()
 {
-    // Load algorithms and error strings.
-    ERR_load_crypto_strings();
-    OpenSSL_add_all_algorithms();
-    SSL_load_error_strings();
-    SSL_library_init();
-
-    // Create new context for server method.
-    ssl_ctx = SSL_CTX_new( SSLv23_server_method() );
-    if(ssl_ctx == 0)
+    if( !ssl_init(&ssl_ctx, true) )
     {
         ERR_print_errors_fp(stderr);
         exit(1);
     }
-
 
     // Load certificate & private key
     if ( SSL_CTX_use_certificate_chain_file(ssl_ctx, CERTIFICATE_FILE) <= 0) {
@@ -232,7 +220,7 @@ void main_loop()
 /// --- MAIN --- ///
 int main() {
 
-    ssl_init();
+    ssl_init_server();
     listen();
 
     main_loop();

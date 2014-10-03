@@ -1,7 +1,7 @@
 EXECUTABLE = server
 EXECUTABLECLI = client
 
-CC=g++ -lboost_system -lboost_thread
+CC=g++ -lboost_system -lboost_thread -g
 CFLAGS=-Wall -DDEBUG -Wreorder -D_RENEG_ON_
 COMPILE=$(CC) $(CFLAGS)
 
