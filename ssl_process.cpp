@@ -13,7 +13,8 @@ bool ssl_init(SSL_CTX** ssl_ctx, bool is_server)
 
     // Create new context for server method.
     *ssl_ctx = SSL_CTX_new(
-        is_server ? SSLv23_server_method() : SSLv23_client_method());
+        // TLSv1_server_method needs to be used for SRP
+        is_server ? TLSv1_server_method() : SSLv23_client_method());
     if(*ssl_ctx == 0)
     {
         ERR_print_errors_fp(stderr);
@@ -31,7 +32,6 @@ bool handle_error_code(int& len, SSL* SSLHandler, int code, const char* func)
         return false;
     case SSL_ERROR_ZERO_RETURN:
         cout << "CONNETION CLOSE ON WRITE" << endl;
-        exit(1);
         break;
     case SSL_ERROR_WANT_READ:
         cout << func << " WANT READ" << endl;
@@ -41,11 +41,9 @@ bool handle_error_code(int& len, SSL* SSLHandler, int code, const char* func)
         break;
     case SSL_ERROR_SYSCALL:
         cout << func << " ESYSCALL" << endl;
-//        exit(1);
         break;
     case SSL_ERROR_SSL:
         cout << func << " ESSL" << endl;
-        exit(1);
         break;
     default:
         cout << func << " SOMETHING ELSE" << endl;

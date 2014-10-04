@@ -14,9 +14,18 @@
 #include <iostream>
 #include "ssl_process.h"
 #include <utility>
+#include <openssl/srp.h>
 
 using namespace boost;
 using namespace std;
+
+void CHECK( bool test )
+{
+    if(test) {
+        cout << "MAKE IT ASSERT" << endl;
+        exit(0);
+    }
+}
 
 typedef pair<int, SSL*> SocketSSLHandles_t;
 SocketSSLHandles_t WriteHandler(0,0);
@@ -33,6 +42,46 @@ ReadQueue_t ReadQueue;
 int master_socket=0;
 SSL_CTX* ssl_ctx;
 
+static SRP_VBASE *srpData = NULL;
+static const char *srpvfile = "password.srpv";
+
+// OpenSSL defines a handy SRP_VBASE type that can be used to store verifiers and we can use SRP_VBASE_init to load in the the verifier file we made earlier
+void setup_SRP_data(SSL_CTX *ctx)
+{
+    srpData = SRP_VBASE_new(NULL);
+    CHECK(srpData == NULL);
+    if (SRP_VBASE_init(srpData, (char *)srpvfile) != 0) {
+        cout << "SRP data not loaded" << endl;
+        exit(1);
+    }
+}
+
+int SRP_server_callback(SSL *s, int *ad, void *arg)
+{
+    cout << "SRP server callback starts" << endl;
+    char *srpusername = SSL_get_srp_username(s);
+    CHECK(srpusername == NULL);
+    cout << "User: " << srpusername << " tries to login";
+
+    // Get data for user
+    SRP_user_pwd *p = SRP_VBASE_get_by_user(srpData,srpusername);
+    if (p == NULL) {
+        fprintf(stdout, "User %s doesn't exist\n", srpusername);
+        return SSL3_AL_FATAL;
+    }
+    // Set verifier data
+    CHECK(SSL_set_srp_server_param(s,
+                                    p->N,
+                                    p->g,
+                                    p->s,
+                                    p->v,
+                                    NULL) < 0);
+
+    cout << "SRP server callback ends" << endl;
+
+    return SSL_ERROR_NONE;
+}
+
 void ssl_init_server()
 {
     if( !ssl_init(&ssl_ctx, true) )
@@ -41,33 +90,24 @@ void ssl_init_server()
         exit(1);
     }
 
-    // Load certificate & private key
-    if ( SSL_CTX_use_certificate_chain_file(ssl_ctx, CERTIFICATE_FILE) <= 0) {
-        ERR_print_errors_fp(stderr);
-        _exit(1);
-    }
+    setup_SRP_data(ssl_ctx);
 
-    if ( SSL_CTX_use_PrivateKey_file(ssl_ctx, PRIVATE_KEY_FILE, SSL_FILETYPE_PEM) <= 0) {
-        ERR_print_errors_fp(stderr);
-        _exit(1);
-    }
-
-    // Verify if public-private keypair matches
-    if ( !SSL_CTX_check_private_key(ssl_ctx) ) {
-        fprintf(stderr, "Private key is invalid.\n");
-        _exit(1);
-    }
-
-    // set weak protocol, so it is easy to debug with wireshark
-    SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1_2
-                        | SSL_OP_NO_TLSv1_1
-                        | SSL_OP_NO_TLSv1
+    SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1
                         | SSL_OP_ALL
                         | SSL_OP_SINGLE_DH_USE );
+
+    // SSL_MODE_AUTO_RETRY: this program uses blocking-io, SSL_MODE_AUTO_RETRY set in order to
+    // make openssl deal with retries on handshake (no need to checking for WANT_READ, WANT_WRITE)
+    SSL_CTX_set_mode(ssl_ctx, SSL_MODE_AUTO_RETRY);
+
+    SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_NONE,NULL);
+    SSL_CTX_set_srp_username_callback(ssl_ctx, SRP_server_callback);
+    SSL_CTX_set_srp_cb_arg(ssl_ctx, srpData);
+    SSL_CTX_set_cipher_list(ssl_ctx,"ALL:NULL"); // NULL for testing, DON'T use in production systems
 }
 
 void listen()
-{   
+{
     struct sockaddr_in local_address;
 
     master_socket = ::socket(PF_INET, SOCK_STREAM, 0);
@@ -102,15 +142,26 @@ int accept_socket()
     return client;
 }
 
+// bool handle_error_code(int& len, SSL* SSLHandler, int code, const char* func)
+
 SSL* accept_ssl(int iTCPHandle)
 {
     SSL *ssl = (SSL*) SSL_new(ssl_ctx);
     SSL_set_fd(ssl, iTCPHandle);
 
     // normally this would be in other thread
-    if(SSL_accept(ssl) == -1) {
-        ERR_print_errors_fp(stderr);
-        throw runtime_error("Can't SSL_accept => can't continue");
+    int code = 0;
+    int len = 0;
+    if( (code=SSL_accept(ssl)) == -1) {
+        handle_error_code(len, ssl, code, "accept_ssl");
+        // Should never happen as long as SSL_MODE_AUTO_RETRY is set on SSL_CTX
+        if (BIO_sock_should_retry(code))
+        {
+            cout << "DELAY: functinality not implemented\n" << endl;
+            return NULL;
+        }
+        cout << "PASSWORD probably wrong" << endl;
+        return NULL;
     }
     return ssl;
 }
