@@ -44,10 +44,6 @@ SSL_CTX* ssl_ctx;
 
 static SRP_VBASE *srpData = NULL;
 
-static const char *srpgroup = "1536";
-static const char *username = "user";
-static const char *password = "user";
-
 // OpenSSL defines a handy SRP_VBASE type that can be used to store verifiers and we can use SRP_VBASE_init to load in the the verifier file we made earlier
 void setup_SRP_data(SSL_CTX *ctx)
 {
@@ -56,7 +52,7 @@ void setup_SRP_data(SSL_CTX *ctx)
     // The structure to put the verifier data and create secret g^N
     SRP_user_pwd *p =
        (SRP_user_pwd *)OPENSSL_malloc(sizeof(SRP_user_pwd));
-    SRP_gN *gN = SRP_get_default_gN(srpgroup);
+    SRP_gN *gN = SRP_get_default_gN(SRP_GROUP);
     CHECK(gN == NULL);
 
     // Now create the verifier for the password.
@@ -64,14 +60,14 @@ void setup_SRP_data(SSL_CTX *ctx)
     BIGNUM *salt = NULL, *verifier = NULL;
 
     // OZAPTF: check what it returns and halt on error
-    SRP_create_verifier_BN(username,
-                           password,
+    SRP_create_verifier_BN(USER_NAME,
+                           USER_PASS,
                            &salt,
                            &verifier,
                            gN->N,
                            gN->g);
     // Copy into the SRP_user_pwd structure
-    p->id = OPENSSL_strdup(username);
+    p->id = OPENSSL_strdup(USER_NAME);
     p->g = gN->g;
     p->N = gN->N;
     p->s = salt;

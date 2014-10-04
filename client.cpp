@@ -22,7 +22,7 @@
 
 #include "defs.h"
 #include "ssl_process.h"
-                            
+
 using namespace std;
 
 SSL_CTX* ssl_ctx = 0;
@@ -30,6 +30,27 @@ int master_fd = 0;
 
 SSL* SSLHandler = 0;
 int CharsRead   = 0;
+
+
+const char *password = NULL;
+
+char *SRP_cb(SSL *ssl, void *arg)
+{
+    cout << "SRP CB started" << endl;
+    char *user = (char*)arg;
+    ssize_t promptsize = 256;
+    char prompt[promptsize];
+    snprintf(prompt, promptsize,
+                   "Password for %s: ", user);
+
+    // don't use getpass in production code (use similar implementation as in s_client: ssl_give_srp_client_pwd_cb)
+    char *pass = getpass(prompt);
+    char *result = OPENSSL_strdup(pass);
+    // getpass uses a static buffer, so clear it out after use.
+    memset(pass,0,strlen(pass));
+    cout << "SRP CB ended" << endl;
+    return result;
+}
 
 void connect()
 {
@@ -46,6 +67,12 @@ void connect()
         throw runtime_error("Can't connect to the server");
     }
 
+    // set SRP parameters
+    SSL_CTX_set_srp_username(ssl_ctx, (char*)USER_NAME);
+    SSL_CTX_set_srp_cb_arg(ssl_ctx,(void*)USER_NAME);
+    SSL_CTX_set_srp_client_pwd_callback(ssl_ctx, SRP_cb);
+    SSL_CTX_set_cipher_list(ssl_ctx,"SRP");
+
     SSLHandler = SSL_new(ssl_ctx);
 
     // if socket is blocking you can set this and forget about looking at SSL_get_error code on I/O calls
@@ -57,9 +84,12 @@ void connect()
 
     SSL_set_fd(SSLHandler, master_fd);
 
-    if( SSL_connect(SSLHandler) <= 0)
+    int code = 0;
+    if( (code=SSL_connect(SSLHandler)) <= 0)
     {
-        cerr << "Can't setup SSL session" << endl;
+        cerr << "Can't setup SSL session: "  << endl;
+        handle_error_code(code, SSLHandler, code, "SSL_connect");
+
         exit(1);
     }
 }

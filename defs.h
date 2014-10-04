@@ -3,7 +3,6 @@
 #define IP                  "127.0.0.1"
 #define EXCHANGE_STRING     "ABCDEFGHIJKLMNOPRSTUWXYZ"
 #define EXCHANGE_STRING_LEN sizeof(EXCHANGE_STRING)/sizeof(EXCHANGE_STRING[0])
-#define RENEG_INIT_LEN      200
-#define CERTIFICATE_FILE    "etc/cert"
-#define PRIVATE_KEY_FILE    "etc/pkey"
-#define SEND_ITERATIONS     100000
+#define SRP_GROUP "1536"
+#define USER_NAME "user"
+#define USER_PASS "user"
