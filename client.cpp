@@ -2,128 +2,176 @@
 /**
 	\Author 				Krzysztof Kwiatkowski
 	\File					client.cpp
-	\Description            The SSL client which connects to the server.cpp
-                            and initiates renegotitaion after RENEG_INIT_LEN
-                            chars exchanged with the server
+	\Description            Very simple implementation of SRP client that
+                            uses OpenSSL API.
 
 *******************************************************************************/
 
-#include <stdexcept>
-#include <unistd.h>
-#include <sys/socket.h>
 #include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
+#include <stdexcept>
 #include <iostream>
-#include <netinet/in.h>
-#include <fcntl.h>
-#include <iostream>
+#include <sstream>
 
 #include "defs.h"
 #include "ssl_process.h"
 
 using namespace std;
 
-SSL_CTX* ssl_ctx = 0;
+// Descriptor of TCP connection
 int master_fd = 0;
+// Descriptor of SSL session
+SSL* ssl_fd = 0;
+// SSL session configuration
+SSL_CTX* ssl_ctx = 0;
 
-SSL* SSLHandler = 0;
-int CharsRead   = 0;
-
-
-const char *password = NULL;
-
+/* -----------------------------------------------------------------------------
+ * @brief   SRP_cb - Normally in this method implementation gets somehow user
+ *          password ( disk file / by interactively asking user or / whatever else )
+ *
+ * @param   ssl - initialized SSL context of the TLS session
+ *          arg - arbitrary value set by the user with SSL_CTX_set_srp_cb_arg
+ *                function
+ *
+ * @returns Pointer to buffer with the password
+ *
+-------------------------------------------------------------------------------- */
 char *SRP_cb(SSL *ssl, void *arg)
 {
-    cout << "SRP CB started" << endl;
-    char *user = (char*)arg;
-    ssize_t promptsize = 256;
-    char prompt[promptsize];
-    snprintf(prompt, promptsize,
-                   "Password for %s: ", user);
-
-    // don't use getpass in production code (use similar implementation as in s_client: ssl_give_srp_client_pwd_cb)
-    char *pass = getpass(prompt);
-    char *result = OPENSSL_strdup(pass);
-    // getpass uses a static buffer, so clear it out after use.
-    memset(pass,0,strlen(pass));
-    cout << "SRP CB ended" << endl;
-    return result;
+    return OPENSSL_strdup(USER_PASS);
 }
 
+/* -----------------------------------------------------------------------------
+ * @brief   function makes TCP connection with remote host available via IP:PORT
+-------------------------------------------------------------------------------- */
 void connect()
 {
     struct sockaddr_in echoserver;
+
+    // Create regular structure for the socket
     master_fd = socket(AF_INET, SOCK_STREAM, 0);
     memset(&echoserver, 0, sizeof(echoserver));
     echoserver.sin_family = AF_INET;
     echoserver.sin_addr.s_addr = inet_addr(IP);
     echoserver.sin_port = htons(PORT);
 
-    /* Establish connection */
+    // Connect to remote peer
     if ( 0 > ::connect(master_fd, (struct sockaddr *) &echoserver, sizeof(echoserver)) )
     {
-        throw runtime_error("Can't connect to the server");
+        throw runtime_error("Couldn't establish connection.");
     }
+}
 
-    // set SRP parameters
+
+/* -----------------------------------------------------------------------------
+ * @brief   establish_TLS_session - method does 3 following actions:
+ *          - Configures SSL_CTX for SRP usage
+ *          - Configures SSL_CTX for blocking I/O
+ *          - Creates SSL session
+ *
+-------------------------------------------------------------------------------- */
+void establish_TLS_session()
+{
+    long ssl_mode = 0;
+
+    // -------------------------------------------------------------------------
+    // SRP specific stuff
+    //
+
+    // Username to be used
     SSL_CTX_set_srp_username(ssl_ctx, (char*)USER_NAME);
-    SSL_CTX_set_srp_cb_arg(ssl_ctx,(void*)USER_NAME);
+    // Set callback function that will provide password to be used on SRP
     SSL_CTX_set_srp_client_pwd_callback(ssl_ctx, SRP_cb);
+    // This function sets value of second argument with which SRP CB will be called
+    SSL_CTX_set_srp_cb_arg(ssl_ctx,(void*) USER_NAME);
+    // Use only those ciphers that are on SRP list
+    // (we may also specify here concreate cipher to use f.e. SRP-3DES-EDE-CBC-SHA)
     SSL_CTX_set_cipher_list(ssl_ctx,"SRP");
 
-    SSLHandler = SSL_new(ssl_ctx);
+    //
+    // -------------------------------------------------------------------------
 
-    // if socket is blocking you can set this and forget about looking at SSL_get_error code on I/O calls
-    long mode = SSL_CTX_set_mode(ssl_ctx, SSL_MODE_AUTO_RETRY);
-    if( ( mode & SSL_MODE_AUTO_RETRY) != SSL_MODE_AUTO_RETRY )
+    // Setting SSL_MODE_AUTO_RETRY makes code much easier to understand.
+    // When flag is set for blocking I/O openssl takes care of WANT_READ/WANT_WRITE
+    // errors, that may happen during TLS handshake.
+    ssl_mode = SSL_CTX_set_mode(ssl_ctx, SSL_MODE_AUTO_RETRY);
+    if( ( ssl_mode & SSL_MODE_AUTO_RETRY) != SSL_MODE_AUTO_RETRY )
     {
          throw runtime_error("SSL_MODE_AUTO_RETRY couldn't be set");
     }
 
-    SSL_set_fd(SSLHandler, master_fd);
+    // Create SSL object from SSL_CTX template
+    ssl_fd = SSL_new(ssl_ctx);
 
-    int code = 0;
-    if( (code=SSL_connect(SSLHandler)) <= 0)
+    // Tell SSL object that connection is available via master_fd descriptor
+    SSL_set_fd(ssl_fd, master_fd);
+
+    // Finally establish session
+    if( 0 >= SSL_connect(ssl_fd) )
     {
-        cerr << "Can't setup SSL session: "  << endl;
-        handle_error_code(code, SSLHandler, code, "SSL_connect");
-
-        exit(1);
+        cout << SSL_state_string(ssl_fd) << endl;
+        throw runtime_error("Couldn't establish SSL session.");
     }
 }
 
-void start()
+
+/* -----------------------------------------------------------------------------
+ * @brief  Function sends some data and blocks until response is received.
+ *         Method prints SSL state after each operation and data RECEIVED.
+   ----------------------------------------------------------------------------- */
+void exchange_data()
 {
     char buf[MAX_PACKET_SIZE];
-    size_t len=0;
+
     memcpy(buf, "HELLO", 6);
 
     // send
-    cout << "SSL_write: start" << endl;
-    int code = SSL_write(SSLHandler, buf, 6);
-    handle_error_code(code, SSLHandler, code, "SSL_write");
-    cout << "SSL STATE: " << SSL_state_string(SSLHandler) << endl;
+    SSL_write(ssl_fd, buf, 6);
+    cout << "WRITE: SSL STATE: " << SSL_state_string(ssl_fd) << endl;
 
     // receive
     memset(buf,'\0',MAX_PACKET_SIZE);
-    len = SSL_read(SSLHandler, buf, MAX_PACKET_SIZE);
-    handle_error_code(code, SSLHandler, len, "SSL_read");
-    cout << "RECEIVED: " << buf << endl;
+    SSL_read(ssl_fd, buf, MAX_PACKET_SIZE);
+    cout << "READ: SSL STATE: " << SSL_state_string(ssl_fd) << endl;
 
-    ::close(master_fd);
+    cout << "RECEIVED: " << buf << endl;
 }
 
-// --- MAIN --- //
+/* -----------------------------------------------------------------------------
+ * @brief  Main creates SRP-TLS sesion
+ *         Sends some data
+ *         Ends session and closes connection
+   ----------------------------------------------------------------------------- */
 int main()
 {
     try
     {
-        ssl_init(&ssl_ctx, false);
+        // Init SSL library
+        if( !ssl_init(&ssl_ctx, false) )
+        {
+            ERR_print_errors_fp(stderr);
+            throw runtime_error("SSL init failed");
+        }
 
+        // TCP connection
         connect();
-        start();
+
+        // TLS session
+        establish_TLS_session();
+
+        // send some data
+        exchange_data();
+
+        // Close SSL session
+        SSL_shutdown(ssl_fd);
+
+        // Close TCP
+        ::close(master_fd);
     }
     catch(std::runtime_error& e)
     {
