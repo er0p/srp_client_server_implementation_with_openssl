@@ -1,6 +1,7 @@
 #include "defs.h"
 #include "ssl_process.h"
 #include <openssl/srp.h>
+#include <openssl/bn.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
@@ -87,10 +88,10 @@ void initialize_SRP_store(SSL_CTX *ctx)
     cout
         << "USER: "     << pwd->id << " added to DB" << endl
         << " PARAMS "   << endl
-        << " G: "       << pwd->g
-        << " N: "       << pwd->N
-        << " salt: "    << pwd->s
-        << " VERIFIER: "<< pwd->v
+        << " G: "       << BN_bn2hex(pwd->g) << endl
+        << " N: "       << BN_bn2hex(pwd->N) << endl
+        << " salt: "    << BN_bn2hex(pwd->s) << endl
+        << " VERIFIER: "<< BN_bn2hex(pwd->v) << endl
         << endl;
 }
 

@@ -1,5 +1,5 @@
 Example of SRP client server with OpenSSL
-=============================
+=========================================
 
 Toy code which shows how establish SRP-TLS session and exchange some data
 over blocking socket. Socket is blocking becuase it makes code easier to
@@ -8,15 +8,17 @@ same as for any TLS un.
 
 How it works:
 
-    Client:
-    - Sends user and password via SRP to the server
-    - After session established some query & reply is exchanged with server
+Client:
+=======
+* Sends user and password via SRP to the server
+* After session established some query & reply is exchanged with server
 
-    Server:
-    - Creates verifier and salt for the user that will authenticate with
-      login USER_NAME and USER_PASS password
-    - Opens socket
-    - When connection arrives, authentication trial is performed
+Server:
+=======
+* Creates verifier and salt for the user that will authenticate with
+  login USER_NAME and USER_PASS password
+* Opens socket
+* When connection arrives, authentication trial is performed
 
 After TLS session is established program exchanges some data in order to
 show that connection is working correctly.
