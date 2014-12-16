@@ -85,14 +85,24 @@ void initialize_SRP_store(SSL_CTX *ctx)
     // And push it to safestack
     sk_SRP_user_pwd_push(srp_store->users_pwd, pwd);
 
+    char* GHex = BN_bn2hex(pwd->g);
+    char* NHex = BN_bn2hex(pwd->N);
+    char* saltHex = BN_bn2hex(pwd->s);
+    char* verifierHex = BN_bn2hex(pwd->v);
+
     cout
         << "USER: "     << pwd->id << " added to DB" << endl
         << " PARAMS "   << endl
-        << " G: "       << BN_bn2hex(pwd->g) << endl
-        << " N: "       << BN_bn2hex(pwd->N) << endl
-        << " salt: "    << BN_bn2hex(pwd->s) << endl
-        << " VERIFIER: "<< BN_bn2hex(pwd->v) << endl
-        << endl;
+        << " G: "       << GHex << endl
+        << " N: "       << NHex << endl
+        << " salt: "    << saltHex << endl
+        << " VERIFIER: "<< verifierHex << endl
+    << endl;
+
+    OPENSSL_free(GHex);
+    OPENSSL_free(NHex);
+    OPENSSL_free(saltHex);
+    OPENSSL_free(verifierHex);
 }
 
 
@@ -251,6 +261,24 @@ void exchange_data(SSL* ssl)
 
 }
 
+
+/* -----------------------------------------------------------------------------
+ * @brief   Cleans memory allocated during run
+ *
+-------------------------------------------------------------------------------- */
+void cleanup(SSL* ssl)
+{
+    SSL_free(ssl);
+
+    CRYPTO_set_dynlock_create_callback(0);
+    CRYPTO_set_dynlock_lock_callback(0);
+    CRYPTO_set_dynlock_destroy_callback(0);
+    CRYPTO_set_locking_callback(0);
+    CRYPTO_THREADID_set_callback(0);
+
+    SRP_VBASE_free(srp_store);
+}
+
 /* -----------------------------------------------------------------------------
  * @brief   ssl_init_server
  *
@@ -305,6 +333,7 @@ int main()
         exchange_data(ssl);
 
         // close
+        cleanup(ssl);
     }
     catch(runtime_error& e)
     {

@@ -1,8 +1,14 @@
 EXECUTABLESRV = server
 EXECUTABLECLI = client
-EXEC_LIBS = /usr/local/ssl/lib/libssl.a /usr/local/ssl/lib/libcrypto.a -ldl
 
-CC=g++ -I/usr/local/ssl/include/ -lboost_system -g 
+ifndef LIBPATH
+  LIBPATH="/usr/local/ssl"
+endif
+
+LIBDIR=${LIBPATH}"/lib"
+INCDIR=${LIBPATH}"/include"
+EXEC_LIBS=${LIBDIR}/libssl.a ${LIBDIR}/libcrypto.a -ldl
+CC=g++ -I${INCDIR} -lboost_system -g
 CFLAGS=-Wall -DDEBUG -Wreorder -D_RENEG_ON_
 COMPILE=$(CC) $(CFLAGS)
 
