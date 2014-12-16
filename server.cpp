@@ -261,24 +261,6 @@ void exchange_data(SSL* ssl)
 
 }
 
-
-/* -----------------------------------------------------------------------------
- * @brief   Cleans memory allocated during run
- *
--------------------------------------------------------------------------------- */
-void cleanup(SSL* ssl)
-{
-    SSL_free(ssl);
-
-    CRYPTO_set_dynlock_create_callback(0);
-    CRYPTO_set_dynlock_lock_callback(0);
-    CRYPTO_set_dynlock_destroy_callback(0);
-    CRYPTO_set_locking_callback(0);
-    CRYPTO_THREADID_set_callback(0);
-
-    SRP_VBASE_free(srp_store);
-}
-
 /* -----------------------------------------------------------------------------
  * @brief   ssl_init_server
  *
@@ -310,6 +292,11 @@ void ssl_init_server()
     SSL_CTX_set_mode(ssl_ctx, SSL_MODE_AUTO_RETRY);
 }
 
+void server_cleanup()
+{
+    SRP_VBASE_free(srp_store);
+}
+
 int main()
 {
     SSL* ssl = NULL;
@@ -333,7 +320,9 @@ int main()
         exchange_data(ssl);
 
         // close
-        cleanup(ssl);
+        cleanup(ssl_ctx,ssl);
+        server_cleanup();
+
     }
     catch(runtime_error& e)
     {

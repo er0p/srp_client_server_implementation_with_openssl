@@ -23,6 +23,30 @@ bool ssl_init(SSL_CTX** ssl_ctx, bool is_server)
     return true;
 }
 
+/* -----------------------------------------------------------------------------
+ * @brief   Cleans memory allocated during run
+ *
+-------------------------------------------------------------------------------- */
+void cleanup(SSL_CTX* ssl_ctx, SSL* ssl)
+{
+    SSL_free(ssl);
+    SSL_CTX_free(ssl_ctx);
+
+    CRYPTO_set_dynlock_create_callback(0);
+    CRYPTO_set_dynlock_lock_callback(0);
+    CRYPTO_set_dynlock_destroy_callback(0);
+    CRYPTO_set_locking_callback(0);
+    CRYPTO_THREADID_set_callback(0);
+
+    ERR_remove_state(0);
+    ERR_free_strings();
+    EVP_cleanup();
+    CRYPTO_cleanup_all_ex_data();
+
+    sk_SSL_COMP_free(SSL_COMP_get_compression_methods());
+}
+
+
 bool handle_error_code(int& len, SSL* ssl_handler, int code, const char* func)
 {
     switch( SSL_get_error( ssl_handler, code ) )

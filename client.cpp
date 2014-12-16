@@ -172,6 +172,8 @@ int main()
 
         // Close TCP
         ::close(master_fd);
+
+        cleanup(ssl_ctx, ssl_fd);
     }
     catch(std::runtime_error& e)
     {
