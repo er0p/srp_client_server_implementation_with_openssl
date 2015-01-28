@@ -26,3 +26,7 @@ show that connection is working correctly.
 In this implementation I don't care about any memory free'ing, closing
 session/connection correctly etc. Proper care needs to be taken in production
 code.
+
+TODO:
+=====
+1. Code for adding new users 
